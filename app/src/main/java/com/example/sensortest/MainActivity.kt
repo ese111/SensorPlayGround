@@ -64,24 +64,62 @@ class MainActivity : ComponentActivity() {
 
                 val sensorManager = remember { getSystemService(Context.SENSOR_SERVICE) as SensorManager }
                 val sensorAccelerator = remember { sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) }
+                val sensorMagnetic = remember { sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD) }
+
                 val angle = remember { mutableDoubleStateOf(0.0) }
                 val sensorEventListener = remember {
                     object : SensorEventListener {
+                        private val accValue = FloatArray(3)
+                        private val magValue = FloatArray(3)
+
+                        private var isGetAcc = false
+                        private var isGetMAg = false
+
                         override fun onSensorChanged(event: SensorEvent?) {
                             event?.let {
-                                val x = event.values[0]
-                                val y = event.values[1]
-                                val z = event.values[2]
 
-                                val anglexy = atan2(x, y) / (PI/180)
-
-                                if (anglexy >= 0) {
-                                    angle.doubleValue = anglexy
-                                    Log.println(Log.INFO, "anglexy", anglexy.toString())
-                                } else {
-                                    angle.doubleValue = (360 - abs(anglexy))
-                                    Log.println(Log.INFO, "anglexy", (360 - abs(anglexy)).toString())
+                                when (event.sensor.type) {
+                                    Sensor.TYPE_ACCELEROMETER -> {
+                                        System.arraycopy(event.values, 0, accValue, 0, event.values.size)
+                                        isGetAcc = true
+                                    }
+                                    Sensor.TYPE_MAGNETIC_FIELD -> {
+                                        System.arraycopy(event.values, 0, magValue, 0, event.values.size)
+                                        isGetMAg = true
+                                    }
                                 }
+
+                                if (isGetAcc && isGetMAg) {
+                                    val r = FloatArray(9)
+                                    val i = FloatArray(9)
+
+                                    val orientationValues = FloatArray(3)
+
+                                    SensorManager.getRotationMatrix(
+                                        r,
+                                        i,
+                                        accValue,
+                                        magValue
+                                    )
+
+                                    SensorManager.getOrientation(r, orientationValues)
+
+                                    val azimuth = Math.toDegrees(orientationValues[0].toDouble())
+                                    val pitch = Math.toDegrees(orientationValues[1].toDouble())
+                                    val roll = Math.toDegrees(orientationValues[2].toDouble())
+
+                                    angle.doubleValue = if (azimuth < 0) {
+                                        azimuth + 360
+                                    } else {
+                                        azimuth
+                                    }
+                                    Log.println(
+                                        Log.INFO,
+                                        "anglexy",
+                                        "azimuth: $azimuth, pitch: $pitch, roll: $roll"
+                                    )
+                                }
+
                             }
                         }
 
@@ -99,6 +137,7 @@ class MainActivity : ComponentActivity() {
                         when(event) {
                             Lifecycle.Event.ON_RESUME -> {
                                 sensorManager.registerListener(sensorEventListener, sensorAccelerator, SensorManager.SENSOR_DELAY_NORMAL)
+                                sensorManager.registerListener(sensorEventListener, sensorMagnetic, SensorManager.SENSOR_DELAY_NORMAL)
                             }
                             Lifecycle.Event.ON_PAUSE,
                             Lifecycle.Event.ON_STOP,
